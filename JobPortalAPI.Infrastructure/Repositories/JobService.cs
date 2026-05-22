@@ -1,0 +1,113 @@
+﻿using JobPortalAPI.Application.Common;
+using JobPortalAPI.Application.DTOs.Job;
+using JobPortalAPI.Application.Interfaces;
+using JobPortalAPI.Domain.Entities;
+
+namespace JobPortalAPI.Infrastructure.Services;
+
+public class JobService : IJobService
+{
+    private readonly IJobRepository _jobRepository;
+
+    public JobService(IJobRepository jobRepository)
+    {
+        _jobRepository = jobRepository;
+    }
+
+    public async Task<JobResponseDto> CreateJobAsync(CreateJobDto dto, Guid recruiterId)
+    {
+        var job = new Job
+        {
+            Id = Guid.NewGuid(),
+            Title = dto.Title,
+            Description = dto.Description,
+            Salary = dto.Salary,
+            Location = dto.Location,
+            JobType = dto.JobType,
+            ExpiryDate = dto.ExpiryDate,
+            RecruiterId = recruiterId,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        var created = await _jobRepository.CreateAsync(job);
+        return MapToDto(created);
+    }
+
+    public async Task<PagedResult<JobResponseDto>> GetJobsAsync(
+        int page,
+        int pageSize,
+        string? location,
+        string? jobType,
+        decimal? minSalary,
+        decimal? maxSalary)
+    {
+        var (jobs, totalCount) = await _jobRepository.GetAllAsync(
+            page, pageSize, location, jobType, minSalary, maxSalary);
+
+        return new PagedResult<JobResponseDto>
+        {
+            Items = jobs.Select(MapToDto).ToList(),
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize
+        };
+    }
+
+    public async Task<JobResponseDto> GetJobByIdAsync(Guid id)
+    {
+        var job = await _jobRepository.GetByIdAsync(id);
+
+        if (job == null)
+            throw new Exception("Job not found.");
+
+        return MapToDto(job);
+    }
+
+    public async Task<JobResponseDto> UpdateJobAsync(Guid id, CreateJobDto dto, Guid recruiterId)
+    {
+        var job = await _jobRepository.GetByIdAsync(id);
+
+        if (job == null)
+            throw new Exception("Job not found.");
+
+        if (job.RecruiterId != recruiterId)
+            throw new Exception("You are not authorized to update this job.");
+
+        job.Title = dto.Title;
+        job.Description = dto.Description;
+        job.Salary = dto.Salary;
+        job.Location = dto.Location;
+        job.JobType = dto.JobType;
+        job.ExpiryDate = dto.ExpiryDate;
+
+        var updated = await _jobRepository.UpdateAsync(job);
+        return MapToDto(updated);
+    }
+
+    public async Task DeleteJobAsync(Guid id, Guid recruiterId)
+    {
+        var job = await _jobRepository.GetByIdAsync(id);
+
+        if (job == null)
+            throw new Exception("Job not found.");
+
+        if (job.RecruiterId != recruiterId)
+            throw new Exception("You are not authorized to delete this job.");
+
+        await _jobRepository.DeleteAsync(job);
+    }
+
+    // Private mapper
+    private static JobResponseDto MapToDto(Job job) => new()
+    {
+        Id = job.Id,
+        Title = job.Title,
+        Description = job.Description,
+        Salary = job.Salary,
+        Location = job.Location,
+        JobType = job.JobType,
+        CreatedAt = job.CreatedAt,
+        ExpiryDate = job.ExpiryDate,
+        RecruiterName = job.Recruiter?.FullName ?? "Unknown"
+    };
+}
